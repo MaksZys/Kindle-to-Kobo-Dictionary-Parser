@@ -23,7 +23,9 @@ func TestMakeDictfileKeepsKindleEntries(t *testing.T) {
 		t.Fatalf("got %d entries, want 10", count)
 	}
 	text := string(dictfile)
-	if !strings.Contains(text, "@ word9\n::\n<html><div><b>word9</b> <i>n</i> znaczenie 9</div><blockquote>example 9</blockquote>") {
+	if !strings.Contains(text, `@ word9
+::
+<html><div><b>word9</b> <i>n</i> znaczenie 9</div><blockquote style="margin:0 0 0 1em">example 9</blockquote>`) {
 		t.Fatalf("last entry or definition missing: %s", text)
 	}
 	if strings.Contains(text, "Front matter") {
@@ -38,6 +40,28 @@ func TestNormalizeCalibreHTML(t *testing.T) {
 	want := `<div class="entry"><span><span class="bold">word</span></span> <span class="italic">n</span></div><hr/>`
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestCleanHTMLFormatsSensesAndExamples(t *testing.T) {
+	input := `<div class="entry"><span class="bold">word</span> <span class="bold">1.</span> first ➤ example <span class="bold">2.</span> second</div><blockquote class="calibre15">phrase <span class="bold">1.</span> one <span class="bold">2.</span> two</blockquote>`
+	got := cleanHTML(input)
+	want := `<div><b>word</b> <ol style="margin:0 0 0 1em;padding-left:1em"><li>first<br/>➤ example</li><li>second</li></ol></div><blockquote style="margin:0 0 0 1em">phrase <ol style="margin:0 0 0 1em;padding-left:1em"><li>one</li><li>two</li></ol></blockquote>`
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestCleanHTMLPreservesUnrecognizedNumberingAndLists(t *testing.T) {
+	input := `<div><span class="bold">word</span> <span class="bold">1.</span> first <span class="bold">3.</span> third</div><ul><li>existing list</li></ul>`
+	got := cleanHTML(input)
+	want := `<div><b>word</b> <b>1.</b> first <b>3.</b> third</div><ul><li>existing list</li></ul>`
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	emptyMeaning := `<div><b>word</b> <b>1.</b> <b>2.</b> second</div>`
+	if got := formatNumberedBlock(emptyMeaning); got != emptyMeaning {
+		t.Fatalf("empty meaning should stay unchanged: %s", got)
 	}
 }
 

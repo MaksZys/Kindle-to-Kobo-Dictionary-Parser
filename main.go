@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/pgaskin/dictutil/dictgen"
@@ -29,6 +30,11 @@ var (
 	linkStart  = regexp.MustCompile(`<a(?: [^>]*)?>`)
 	attribute  = regexp.MustCompile(` (?:class|id|href)="[^"]*"`)
 	space      = regexp.MustCompile(`\s+`)
+	quoteStart = regexp.MustCompile(`<blockquote(?: [^>]*)?>`)
+	divBlock   = regexp.MustCompile(`(?s)<div>(.*?)</div>`)
+	quoteBlock = regexp.MustCompile(`(?s)<blockquote[^>]*>(.*?)</blockquote>`)
+	sense      = regexp.MustCompile(`<b>([1-9][0-9]*)\.</b>`)
+	example    = regexp.MustCompile(`\s+([➤☞])\s+`)
 	locale     = regexp.MustCompile(`^[a-z]{2}(?:-[a-z]{2})?$`)
 )
 
@@ -226,10 +232,51 @@ func makeDictfile(source []byte) ([]byte, int, error) {
 func cleanHTML(body string) string {
 	body = boldSpan.ReplaceAllString(body, "<b>$1</b>")
 	body = italicSpan.ReplaceAllString(body, "<i>$1</i>")
+	body = quoteStart.ReplaceAllString(body, `<blockquote style="margin:0 0 0 1em">`)
 	body = otherSpan.ReplaceAllString(body, "")
 	body = linkStart.ReplaceAllString(body, "")
 	body = strings.ReplaceAll(body, "</a>", "")
 	body = attribute.ReplaceAllString(body, "")
 	body = space.ReplaceAllString(body, " ")
+	body = divBlock.ReplaceAllStringFunc(body, formatNumberedBlock)
+	body = quoteBlock.ReplaceAllStringFunc(body, formatNumberedBlock)
+	body = example.ReplaceAllString(body, "<br/>$1 ")
 	return strings.TrimSpace(body)
+}
+
+func formatNumberedBlock(block string) string {
+	start := strings.IndexByte(block, '>') + 1
+	end := strings.LastIndex(block, "</")
+	content := block[start:end]
+	if strings.Contains(content, "<div") || strings.Contains(content, "<blockquote") {
+		return block
+	}
+	markers := sense.FindAllStringSubmatchIndex(content, -1)
+	if len(markers) < 2 {
+		return block
+	}
+	for i, marker := range markers {
+		number, err := strconv.Atoi(content[marker[2]:marker[3]])
+		if err != nil || number != i+1 {
+			return block
+		}
+	}
+	var list strings.Builder
+	list.WriteString(content[:markers[0][0]])
+	list.WriteString(`<ol style="margin:0 0 0 1em;padding-left:1em">`)
+	for i, marker := range markers {
+		end := len(content)
+		if i+1 < len(markers) {
+			end = markers[i+1][0]
+		}
+		meaning := strings.TrimSpace(content[marker[1]:end])
+		if meaning == "" {
+			return block
+		}
+		list.WriteString("<li>")
+		list.WriteString(meaning)
+		list.WriteString("</li>")
+	}
+	list.WriteString("</ol>")
+	return block[:start] + list.String() + block[end:]
 }
